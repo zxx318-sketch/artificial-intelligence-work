@@ -1,0 +1,12 @@
+from .autodiff import * 
+from .module import *  
+from .tensor import *  
+from .tensor_data import *  
+from .tensor_functions import *  
+from .tensor_ops import *  
+from .cuda_kernel_ops import *
+from .nn import *  
+from .optim import *  
+from .testing import MathTest, MathTestVariable
+
+version = "0.4"
