@@ -35,10 +35,13 @@ class SGD(Optimizer):
     Args:
         parameters: list of Parameter objects to optimize
         lr: learning rate (default 1.0)
+        weight_decay: L2 regularization strength (default 0.0 means no L2)
+                      The update becomes: w = w - lr * (grad + weight_decay * w)
     """
-    def __init__(self, parameters: Sequence[Parameter], lr: float = 1.0):
+    def __init__(self, parameters: Sequence[Parameter], lr: float = 1.0, weight_decay: float = 0.0):
         super().__init__(parameters)
         self.lr = lr
+        self.weight_decay = weight_decay
 
     def zero_grad(self) -> None:
         """
@@ -60,20 +63,27 @@ class SGD(Optimizer):
         """
         Perform one SGD update step.
 
-        For each parameter: value = value - lr * grad
+        For each parameter: value = value - lr * (grad + weight_decay * value)
+        When weight_decay=0, this is equivalent to vanilla SGD (no L2).
         """
         for param in self.parameters:
             if param.value is None:
                 continue
             if hasattr(param.value, 'grad') and param.value.grad is not None:
-                update = param.value.grad * (-self.lr)
-                # param.value = param.value + update
-                # Use update to keep the Parameter wrapper intact
+                # grad_with_l2 = grad + weight_decay * w
+                grad = param.value.grad
+                if self.weight_decay > 0.0:
+                    grad = grad + param.value * self.weight_decay
+                update = grad * (-self.lr)
                 new_val = param.value + update
                 param.update(new_val)
             elif hasattr(param.value, 'derivative') and param.value.derivative is not None:
                 # Scalar fallback
-                new_val = param.value - self.lr * param.value.derivative
+                w = param.value
+                d = param.value.derivative
+                if self.weight_decay > 0.0:
+                    d = d + w * self.weight_decay
+                new_val = w - self.lr * d
                 param.update(new_val)
 
     def _print(self) -> None:

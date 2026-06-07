@@ -125,6 +125,23 @@ class Linear(Module):
 
         return out
 
+class Dropout(Module):
+    def __init__(self, p: float = 0.5):
+        super().__init__()
+        self.p = p
+        self.training = True
+
+    def forward(self, x: Tensor) -> Tensor:
+        if not self.training or self.p == 0.0:
+            return x
+        # mask ~ Bernoulli(1-p), scaled by 1/(1-p)
+        mask = rand(x.shape, backend=x.backend)
+        mask = mask > self.p  # 需要 LT 支持（已有）
+        # 缩放：保留的神经元除以 (1-p)
+        scale = 1.0 / (1.0 - self.p)
+        return x * mask * scale
+
+
 
 class Conv2d(Module):
     """
@@ -218,6 +235,16 @@ class Sequential(Module):
 class ReLU(Module):
     def forward(self, x: Tensor) -> Tensor:
         return x.relu()
+    
+class Sigmoid(Module):
+    def forward(self, x: Tensor) -> Tensor:
+        return x.sigmoid()
+
+    
+
+class Tanh(Module):
+    def forward(self, x: Tensor) -> Tensor:
+        return x.tanh()
 
 # ==============================================================================
 # Part 4: Loss Function
