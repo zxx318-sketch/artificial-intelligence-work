@@ -5,7 +5,7 @@ numba==0.63.1
 torch==2.9.1
 
 # Project
-# Add your extra requirements here!
+matplotlib==3.10.7
 
 # Tests
 pytest==9.0.2

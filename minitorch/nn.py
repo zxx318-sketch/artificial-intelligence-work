@@ -1,4 +1,4 @@
-from typing import Tuple
+from typing import Tuple, Optional
 import math
 
 from . import operators
@@ -146,50 +146,116 @@ class Dropout(Module):
 class Conv2d(Module):
     """
     A 2D convolutional layer.
+
+    Uses the direct convolution implementation from tensor_functions.Conv2d.
+
     Args:
         in_channels: number of channels in the input image
         out_channels: number of channels produced by the convolution
         kh: kernel height
         kw: kernel width
+        stride: convolution stride (default 1)
+        padding: zero-padding (default 0)
     """
 
-    def __init__(self, in_channels: int, out_channels: int, kh: int, kw: int):
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        kh: int,
+        kw: int,
+        stride: int = 1,
+        padding: int = 0,
+    ):
         super().__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.kh = kh
         self.kw = kw
+        self.stride = (stride, stride) if isinstance(stride, int) else stride
+        self.padding = (padding, padding) if isinstance(padding, int) else padding
 
-        # TODO:
-        # Initialize parameters with Xavier initialization.
+        # Xavier initialization: std = sqrt(2 / (fan_in + fan_out))
+        fan_in = in_channels * kh * kw
+        fan_out = out_channels * kh * kw
+        std = math.sqrt(2.0 / (fan_in + fan_out))
+
         # weight: (out_channels, in_channels, kh, kw)
+        weight_data = np.random.randn(out_channels, in_channels, kh, kw).astype(np.float32) * std
         # bias: (out_channels,)
-        raise NotImplementedError("Conv2d init not implemented")
+        bias_data = np.zeros(out_channels, dtype=np.float32)
+
+        self.weight = Parameter(
+            tensor_from_numpy(weight_data, backend=SimpleBackend),
+            name="weight"
+        )
+        self.bias = Parameter(
+            tensor_from_numpy(bias_data, backend=SimpleBackend),
+            name="bias"
+        )
 
     def forward(self, x: Tensor) -> Tensor:
-        # TODO:
-        # compute conv2d with x and weight
-        # add bias
-        raise NotImplementedError("Conv2d forward not implemented")
+        """
+        Forward pass: conv2d(x, weight) + bias
+
+        Args:
+            x: (N, C_in, H, W) input tensor
+
+        Returns:
+            (N, C_out, H_out, W_out) output tensor
+        """
+        from .tensor_functions import Conv2d as Conv2dFn
+        from .tensor_functions import tensor as make_tensor
+        
+        # Wrap stride/padding as tensors so Function.apply can handle them
+        stride_t = make_tensor(list(self.stride))
+        padding_t = make_tensor(list(self.padding))
+        return Conv2dFn.apply(x, self.weight.value, self.bias.value,
+                              stride_t, padding_t)
 
 
 class MaxPool2d(Module):
     """
     A 2D max pooling layer.
+
     Args:
         kernel: (height, width) of the pooling kernel
+        stride: stride of the pooling (defaults to kernel size if None)
     """
-    def __init__(self, kernel: Tuple[int, int]):
+    def __init__(self, kernel: Tuple[int, int], stride: Optional[Tuple[int, int]] = None):
         super().__init__()
         self.kernel = kernel
+        self.stride = stride if stride is not None else kernel
 
     def forward(self, x: Tensor) -> Tensor:
-        # TODO:
-        # 1. Tile input into patches
-        # tiles shape: (batch, channel, new_h, new_w, kh * kw)
-        # 2. Max over last dimension
-        # 3. Reshape back to image shape
-        raise NotImplementedError("MaxPool2d forward not implemented")
+        """
+        Forward pass for max pooling.
+
+        Steps:
+          1. Use im2col to extract patches from the input
+          2. Take max over the patch dimension
+          3. Reshape back to 4D output
+
+        Args:
+            x: (N, C, H, W) input tensor
+
+        Returns:
+            (N, C, H_out, W_out) output tensor
+        """
+        kh, kw = self.kernel
+        sh, sw = self.stride
+
+        # Use tile to reshape into patches: (N, C, H_out, W_out, kh*kw)
+        tiled, new_h, new_w = tile(x, self.kernel)
+
+        # Max over last dim (the patch dim)
+        pooled = max(tiled, 4)  # dim=4 is the last dim with size kh*kw
+
+        # Reshape to (N, C, H_out, W_out)
+        batch, channel = x.shape[0], x.shape[1]
+        out = pooled.contiguous().view(batch, channel, new_h, new_w)
+
+        return out
 
 
 class Flatten(Module):

@@ -78,7 +78,11 @@ def download_mnist(data_dir: str = "./data"):
     Download the MNIST dataset.
     """
     os.makedirs(data_dir, exist_ok=True)
-    base_url = "https://ossci-datasets.s3.amazonaws.com/mnist/"
+    # 备选源列表，按顺序尝试
+    base_urls = [
+        "https://ossci-datasets.s3.amazonaws.com/mnist/",
+        "http://yann.lecun.com/exdb/mnist/",
+    ]
     files = {
         "train_images": "train-images-idx3-ubyte.gz",
         "train_labels": "train-labels-idx1-ubyte.gz",
@@ -86,12 +90,25 @@ def download_mnist(data_dir: str = "./data"):
         "test_labels": "t10k-labels-idx1-ubyte.gz"
     }
     for key, filename in files.items():
-        url = base_url + filename
         filepath = os.path.join(data_dir, filename)
         if not os.path.exists(filepath):
-            print(f"Downloading {filename}...")
-            urllib.request.urlretrieve(url, filepath)
-            print(f"Downloaded {filename} to {filepath}")
+            downloaded = False
+            for base_url in base_urls:
+                url = base_url + filename
+                print(f"Trying {url} ...")
+                try:
+                    urllib.request.urlretrieve(url, filepath)
+                    print(f"Downloaded {filename} to {filepath}")
+                    downloaded = True
+                    break
+                except (urllib.error.HTTPError, OSError) as e:
+                    print(f"  Failed: {e}")
+                    continue
+            if not downloaded:
+                raise RuntimeError(
+                    f"Could not download {filename} from any source. "
+                    f"Please download manually and place in {data_dir}/"
+                )
         else:
             print(f"{filepath} already exists, skipping.")
 

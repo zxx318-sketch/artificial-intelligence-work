@@ -404,7 +404,7 @@ class Im2Col(Function):
 
 class Conv2d(Function):
     @staticmethod
-    def forward(ctx: Context, input: Tensor, weight: Tensor, bias: Optional[Tensor], stride: Tuple[int, int], padding: Tuple[int, int]) -> Tensor:
+    def forward(ctx: Context, input: Tensor, weight: Tensor, bias: Optional[Tensor], stride: Tensor, padding: Tensor) -> Tensor:
         """
         Direct convolution forward propagation (Direct Conv2d Forward)
         No im2col, directly call backend.conv2d
@@ -413,16 +413,20 @@ class Conv2d(Function):
             input: (N, C_in, H_in, W_in)
             weight: (C_out, C_in, KH, KW)
             bias: (C_out,) or None
-            stride: (sh, sw)
-            padding: (ph, pw)
+            stride: Tensor of shape (2,) representing (sh, sw)
+            padding: Tensor of shape (2,) representing (ph, pw)
         """
+        # Unwrap tensors to tuples
+        stride_tup = (int(stride[0]), int(stride[1]))
+        padding_tup = (int(padding[0]), int(padding[1]))
+        
         # 1. save the context for backward propagation
         ctx.save_for_backward(input, weight, bias)
-        ctx.stride = stride
-        ctx.padding = padding
+        ctx.stride = stride_tup
+        ctx.padding = padding_tup
         
         # 2. call the conv2d method directly implemented in SimpleOps
-        out = input.f.conv2d(input, weight, stride, padding)
+        out = input.f.conv2d(input, weight, stride_tup, padding_tup)
         
         # 3. handle the bias (Bias)
         if bias is not None:
@@ -630,7 +634,10 @@ def ones_tensor_from_numpy(shape, backend: TensorBackend = SimpleBackend):
 
 
 # Gradient check for tensors
-import torch
+try:
+    import torch
+except ImportError:
+    torch = None
 import warnings
 
 

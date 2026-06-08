@@ -3,8 +3,12 @@ from __future__ import annotations
 import random
 from typing import Iterable, Optional, Sequence, Tuple, Union
 
-import numba
-from numba import cuda
+try:
+    import numba
+    from numba import cuda
+except ImportError:
+    numba = None
+    cuda = None
 import numpy as np
 import numpy.typing as npt
 from numpy import array, float64
@@ -175,6 +179,8 @@ class TensorData:
         assert len(self._storage) == self.size
 
     def to_cuda_(self) -> None:  # pragma: no cover
+        if numba is None:
+            raise RuntimeError("numba is not installed, cannot use CUDA")
         if not numba.cuda.is_cuda_array(self._storage):
             self._storage = numba.cuda.to_device(self._storage)
 

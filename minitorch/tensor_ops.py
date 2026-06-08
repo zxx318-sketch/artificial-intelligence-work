@@ -548,9 +548,6 @@ class SimpleOps(TensorOps):
                                                 w_in * da_strides[3])
                                         da_storage[da_idx] += b_val * go_val
 
-
-                                    raise NotImplementedError("conv2d_backward not implemented")
-
         return d_a, d_b
         # End Task 2.2
 
