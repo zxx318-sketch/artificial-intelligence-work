@@ -316,6 +316,47 @@ class Tanh(Module):
 # Part 4: Loss Function
 # ==============================================================================
 
+class CrossEntropyLossFunction(Function):
+    """Fused cross-entropy loss: forward/backward in one node."""
+
+    @staticmethod
+    def forward(ctx, predictions, targets):
+        logits_np = predictions.to_numpy()
+        labels_np = targets.to_numpy()
+        batch = logits_np.shape[0]
+
+        # Numerically stable log-softmax
+        max_logits = np.max(logits_np, axis=1, keepdims=True)
+        shifted = logits_np - max_logits
+        exp_shifted = np.exp(shifted)
+        sum_exp = np.sum(exp_shifted, axis=1, keepdims=True)
+        log_probs = shifted - np.log(sum_exp)
+
+        # Cross-entropy: -mean(sum(targets * log_probs, axis=1))
+        nll = -np.sum(labels_np * log_probs, axis=1)
+        loss_val = np.mean(nll)
+
+        # Save for backward: softmax(probs) and labels
+        softmax = exp_shifted / sum_exp
+        ctx.save_for_backward(softmax, labels_np, batch)
+
+        return tensor_from_numpy(
+            np.array([loss_val], dtype=np.float32),
+            backend=predictions.backend,
+        )
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        softmax, labels_np, batch = ctx.saved_values
+        grad_scalar = grad_output.to_numpy().item()
+        grad_np = grad_scalar * (softmax - labels_np) / batch
+        grad_tensor = tensor_from_numpy(
+            grad_np.astype(np.float32),
+            backend=grad_output.backend,
+        )
+        return grad_tensor, None
+
+
 class CrossEntropyLoss(Module):
     def forward(self, predictions: Tensor, targets: Tensor) -> Tensor:
         """
@@ -328,31 +369,7 @@ class CrossEntropyLoss(Module):
         Returns:
             scalar loss = -mean( sum(targets * log_softmax(predictions), dim=1) )
         """
-        num_classes = predictions.shape[1]
-        batch = predictions.shape[0]
-
-        # ---- 数值稳定的 Log-Softmax ----
-        # log_softmax(x_i) = x_i - max(x) - log(sum(exp(x - max(x))))
-        max_logits = max(predictions, 1)  # (batch, 1) — 每行的最大值
-
-        # 广播减法: predictions - max
-        # 需要将 max 从 (batch, 1) 扩展到 (batch, num_classes)
-        max_expanded = max_logits.view(batch, 1)
-        shifted = predictions + max_expanded * (-1.0)  # x - max
-
-        exp_shifted = shifted.exp()
-        sum_exp = exp_shifted.sum(1)  # (batch, 1)
-        log_sum_exp = sum_exp.log()
-
-        # log_probs = shifted - log_sum_exp
-        # log_sum_exp 需要广播到 (batch, num_classes)
-        log_probs = shifted + log_sum_exp * (-1.0)
-
-        # ---- 交叉熵: -mean( sum(targets * log_probs, dim=1) ) ----
-        nll = -(targets * log_probs).sum(1)  # (batch, 1)
-        loss = nll.mean()  # 标量
-
-        return loss
+        return CrossEntropyLossFunction.apply(predictions, targets)
 
 # End Task 2.3
 

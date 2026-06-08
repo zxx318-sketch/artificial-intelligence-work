@@ -30,6 +30,26 @@ def central_difference(f: Any, *vals: Any, arg: int = 0, epsilon: float = 1e-6) 
 
 variable_count = 1
 
+# Global no_grad flag
+_NO_GRAD = False
+
+
+class no_grad:
+    """Context manager that disables gradient computation."""
+    def __enter__(self):
+        global _NO_GRAD
+        _NO_GRAD = True
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        global _NO_GRAD
+        _NO_GRAD = False
+        return False
+
+
+def is_no_grad() -> bool:
+    """Return whether gradient computation is currently disabled."""
+    return _NO_GRAD
+
 
 class Variable(Protocol):
     def accumulate_derivative(self, x: Any) -> None:

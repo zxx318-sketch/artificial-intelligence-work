@@ -33,6 +33,7 @@ from minitorch.optim import SGD, Adam
 from minitorch.MNISTIterator import load_mnist, MNISTIterator
 from minitorch.tensor_ops import SimpleBackend
 from minitorch.tensor_functions import tensor_from_numpy
+from minitorch.autodiff import no_grad
 
 
 # ============================================================================
@@ -159,35 +160,36 @@ def evaluate(model, data_iterator, loss_fn, max_batches: int = 0):
     total_samples = 0
     batch_count = 0
 
-    for images, labels in data_iterator:
-        if max_batches > 0 and batch_count >= max_batches:
-            break
-        batch_size = images.shape[0]
-        
-        # 前向传播（构建计算图是必须的）
-        logits = model(images)                    # (batch, 10)
-        
-        # 直接用 numpy 算 accuracy（不走 Tensor 图）
-        logits_np = logits.to_numpy()
-        labels_np = labels.to_numpy()
-        pred_np = np.argmax(logits_np, axis=1)
-        true_np = np.argmax(labels_np, axis=1)
-        total_correct += np.sum(pred_np == true_np)
-        
-        # 用 numpy 算 cross-entropy loss（不走 Tensor 图）
-        # log_softmax: logits - max - log(sum(exp(logits - max)))
-        max_logits = logits_np.max(axis=1, keepdims=True)
-        shifted = logits_np - max_logits
-        log_probs = shifted - np.log(np.sum(np.exp(shifted), axis=1, keepdims=True))
-        ce = -np.sum(labels_np * log_probs, axis=1)
-        total_loss += np.mean(ce) * batch_size
-        
-        total_samples += batch_size
-        batch_count += 1
+    with no_grad():
+        for images, labels in data_iterator:
+            if max_batches > 0 and batch_count >= max_batches:
+                break
+            batch_size = images.shape[0]
+            
+            # 前向传播（no_grad 模式下不构建计算图）
+            logits = model(images)                # (batch, 10)
+            
+            # 直接用 numpy 算 accuracy（不走 Tensor 图）
+            logits_np = logits.to_numpy()
+            labels_np = labels.to_numpy()
+            pred_np = np.argmax(logits_np, axis=1)
+            true_np = np.argmax(labels_np, axis=1)
+            total_correct += np.sum(pred_np == true_np)
+            
+            # 用 numpy 算 cross-entropy loss（不走 Tensor 图）
+            # log_softmax: logits - max - log(sum(exp(logits - max)))
+            max_logits = logits_np.max(axis=1, keepdims=True)
+            shifted = logits_np - max_logits
+            log_probs = shifted - np.log(np.sum(np.exp(shifted), axis=1, keepdims=True))
+            ce = -np.sum(labels_np * log_probs, axis=1)
+            total_loss += np.mean(ce) * batch_size
+            
+            total_samples += batch_size
+            batch_count += 1
 
     model.train()  # 恢复训练模式
-    avg_loss = total_loss / total_samples
-    acc = total_correct / total_samples
+    avg_loss = float(total_loss / total_samples)
+    acc = float(total_correct / total_samples)
     return avg_loss, acc
 
 

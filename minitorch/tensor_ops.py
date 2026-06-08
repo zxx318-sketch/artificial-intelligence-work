@@ -21,6 +21,42 @@ if TYPE_CHECKING:
     from .tensor_data import Index, Shape, Storage, Strides
 
 
+# =============================================================================
+# NumPy acceleration helpers
+# =============================================================================
+
+def _tensor_data_to_ndarray(td: TensorData) -> np.ndarray:
+    """Convert TensorData to a NumPy ndarray view (shares memory)."""
+    storage = td._storage
+    shape = tuple(int(s) for s in td._shape)
+    strides = tuple(int(s) * storage.itemsize for s in td._strides)
+    return np.lib.stride_tricks.as_strided(storage, shape=shape, strides=strides)
+
+
+# Map common scalar functions from operators.py to NumPy vectorized equivalents.
+# For ops not in this dict we fall back to the original Python element-loop.
+_NUMPY_UFUNC_MAP = {
+    operators.neg:       np.negative,
+    operators.sigmoid:   lambda x: 1.0 / (1.0 + np.exp(-x)),
+    operators.relu:      lambda x: np.maximum(x, 0.0),
+    operators.log:       lambda x: np.log(x + 1e-6),
+    operators.exp:       np.exp,
+    operators.tanh:      np.tanh,
+    operators.id:        lambda x: x,
+    operators.inv:       lambda x: 1.0 / x,
+    operators.add:       np.add,
+    operators.mul:       np.multiply,
+    operators.lt:        lambda a, b: (a < b).astype(np.float32),
+    operators.eq:        lambda a, b: (a == b).astype(np.float32),
+    operators.is_close:  lambda a, b: (np.abs(a - b) < 1e-2).astype(np.float32),
+    operators.relu_back: lambda x, d: np.where(x > 0, d, 0.0),
+    operators.log_back:  lambda x, d: d / (x + 1e-6),
+    operators.inv_back:  lambda x, d: -(1.0 / (x * x)) * d,
+    operators.pow:       np.power,
+    operators.max:       np.maximum,
+}
+
+
 class MapProto(Protocol):
     def __call__(self, x: Tensor, out: Optional[Tensor] = ..., /) -> Tensor:
         ...
@@ -337,35 +373,13 @@ class SimpleOps(TensorOps):
         # Create output tensor
         out = a.zeros(out_shape)
         
-        # Get the tensor data
-        a_storage, a_shape_array, a_strides = a.tuple()
-        b_storage, b_shape_array, b_strides = b.tuple()
-        out_storage, out_shape_array, out_strides = out.tuple()
-        
-        # Perform matrix multiplication
-        # For each output position (i, j), compute sum over k
-        for i in range(m):
-            for j in range(p):
-                # Compute C[i,j] = sum(A[i,k] * B[k,j] for k in range(n))
-                sum_val = 0.0
-                for k in range(n):
-                    # Get A[i,k]
-                    a_index = np.array([i, k])
-                    a_pos = index_to_position(a_index, a_strides)
-                    a_val = a_storage[a_pos]
-                    
-                    # Get B[k,j]
-                    b_index = np.array([k, j])
-                    b_pos = index_to_position(b_index, b_strides)
-                    b_val = b_storage[b_pos]
-                    
-                    # Accumulate the product
-                    sum_val += a_val * b_val
-                
-                # Set the result
-                out_index = np.array([i, j])
-                out_pos = index_to_position(out_index, out_strides)
-                out_storage[out_pos] = sum_val
+        # ------------------------------------------------------------------
+        # NumPy fast path: use np.matmul (handles batch dims + broadcasting)
+        # ------------------------------------------------------------------
+        a_np = _tensor_data_to_ndarray(a._tensor)
+        b_np = _tensor_data_to_ndarray(b._tensor)
+        out_np = _tensor_data_to_ndarray(out._tensor)
+        np.matmul(a_np, b_np, out=out_np)
         
         return out
 
@@ -573,11 +587,27 @@ def tensor_map(
         Tensor map function.
     """
 
+    np_fn = _NUMPY_UFUNC_MAP.get(fn)
+
     def _map(out_data: TensorData, in_data: TensorData) -> None:
         """
         Apply `fn` elementwise, supporting broadcasting from `in_data` to `out_data`.
         """
-        # Begin Task 1.3
+        # ------------------------------------------------------------------
+        # NumPy fast path for known operators
+        # ------------------------------------------------------------------
+        if np_fn is not None:
+            in_arr = _tensor_data_to_ndarray(in_data)
+            out_arr = _tensor_data_to_ndarray(out_data)
+            result = np_fn(in_arr)
+            if result.shape != out_arr.shape:
+                result = np.broadcast_to(result, out_arr.shape)
+            out_arr[...] = result.astype(np.float32)
+            return
+
+        # ------------------------------------------------------------------
+        # Fallback: original Python element-loop (works for arbitrary fn)
+        # ------------------------------------------------------------------
         out_storage, out_shape, out_strides = out_data._storage, out_data._shape, out_data._strides
         in_storage, in_shape, in_strides = in_data._storage, in_data._shape, in_data._strides
 
@@ -626,12 +656,29 @@ def tensor_zip(
         Tensor zip function.
     """
 
+    np_fn = _NUMPY_UFUNC_MAP.get(fn)
+
     def _zip(out_data: TensorData, a_data: TensorData, b_data: TensorData) -> None:
         """
         Apply `fn` elementwise to `a_data` and `b_data`, writing into `out_data`,
         with full broadcasting support.
         """
-        # Begin Task 1.3
+        # ------------------------------------------------------------------
+        # NumPy fast path for known operators
+        # ------------------------------------------------------------------
+        if np_fn is not None:
+            a_arr = _tensor_data_to_ndarray(a_data)
+            b_arr = _tensor_data_to_ndarray(b_data)
+            out_arr = _tensor_data_to_ndarray(out_data)
+            result = np_fn(a_arr, b_arr)
+            if result.shape != out_arr.shape:
+                result = np.broadcast_to(result, out_arr.shape)
+            out_arr[...] = result.astype(np.float32)
+            return
+
+        # ------------------------------------------------------------------
+        # Fallback: original Python element-loop (works for arbitrary fn)
+        # ------------------------------------------------------------------
         out_storage, out_shape, out_strides = out_data._storage, out_data._shape, out_data._strides
         a_storage, a_shape, a_strides = a_data._storage, a_data._shape, a_data._strides
         b_storage, b_shape, b_strides = b_data._storage, b_data._shape, b_data._strides
@@ -694,6 +741,28 @@ def tensor_reduce(
         the reduced dimension. Its storage should already be initialized with
         the identity element (e.g., 0 for sum, 1 for product).
         """
+        # ------------------------------------------------------------------
+        # NumPy fast path for common reductions (add / mul / max)
+        # ------------------------------------------------------------------
+        if fn is operators.add:
+            a_arr = _tensor_data_to_ndarray(a_data)
+            out_arr = _tensor_data_to_ndarray(out_data)
+            out_arr[...] = np.sum(a_arr, axis=reduce_dim, keepdims=True).astype(np.float32)
+            return
+        elif fn is operators.mul:
+            a_arr = _tensor_data_to_ndarray(a_data)
+            out_arr = _tensor_data_to_ndarray(out_data)
+            out_arr[...] = np.prod(a_arr, axis=reduce_dim, keepdims=True).astype(np.float32)
+            return
+        elif fn is operators.max:
+            a_arr = _tensor_data_to_ndarray(a_data)
+            out_arr = _tensor_data_to_ndarray(out_data)
+            out_arr[...] = np.max(a_arr, axis=reduce_dim, keepdims=True).astype(np.float32)
+            return
+
+        # ------------------------------------------------------------------
+        # Fallback: original Python element-loop (works for arbitrary fn)
+        # ------------------------------------------------------------------
         # Begin Task 1.3
         out_storage, out_shape, out_strides = out_data._storage, out_data._shape, out_data._strides
         a_storage, a_shape, a_strides = a_data._storage, a_data._shape, a_data._strides

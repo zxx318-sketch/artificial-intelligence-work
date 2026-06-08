@@ -12,7 +12,7 @@ from .Myclass import History
 import minitorch
 
 from . import operators
-from .autodiff import Context
+from .autodiff import Context, is_no_grad
 from .tensor_ops import SimpleBackend, TensorBackend
 
 if TYPE_CHECKING:
@@ -62,8 +62,9 @@ class Function:
         """
         raw_vals = []
         need_grad = False
+        no_grad_active = is_no_grad()
         for v in vals:
-            if v.requires_grad():
+            if not no_grad_active and v.requires_grad():
                 need_grad = True
             raw_vals.append(v.detach())
         # Begin Task 1.1
