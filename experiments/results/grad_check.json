@@ -1,0 +1,44 @@
+[
+  {
+    "param": "_0.weight",
+    "shape": [
+      4,
+      3
+    ],
+    "max_rel_error": 0.929348886013031,
+    "mean_rel_error": 0.2544323801994324,
+    "analytic_mean": 0.01768042892217636,
+    "numeric_mean": 0.017384687438607216
+  },
+  {
+    "param": "_0.bias",
+    "shape": [
+      3
+    ],
+    "max_rel_error": 0.16775953769683838,
+    "mean_rel_error": 0.11084737628698349,
+    "analytic_mean": 0.022771665826439857,
+    "numeric_mean": 0.021855035796761513
+  },
+  {
+    "param": "_2.weight",
+    "shape": [
+      3,
+      2
+    ],
+    "max_rel_error": 0.0411507748067379,
+    "mean_rel_error": 0.018882276490330696,
+    "analytic_mean": -5.587935447692871e-09,
+    "numeric_mean": 0.0
+  },
+  {
+    "param": "_2.bias",
+    "shape": [
+      2
+    ],
+    "max_rel_error": 0.0065346513874828815,
+    "mean_rel_error": 0.006534534972161055,
+    "analytic_mean": -1.4901161193847656e-08,
+    "numeric_mean": 0.0
+  }
+]

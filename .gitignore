@@ -34,8 +34,7 @@ test_speed*.py
 tensor_tests/
 
 # 实验输出（图片、日志、结果）
-experiments/figures/
-experiments/results/
+
 training_curves.png
 training_log.json
 
