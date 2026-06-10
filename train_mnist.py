@@ -26,11 +26,11 @@ import matplotlib.pyplot as plt
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from minitorch.nn import (
-    Linear, ReLU, Sigmoid, Tanh, Dropout, Flatten,
-    Sequential, CrossEntropyLoss
+    Linear, ReLU, Sigmoid, Tanh, LeakyReLU, Dropout, Flatten,
+    Sequential, CrossEntropyLoss, ACTIVATION_REGISTRY, get_activation
 )
 from minitorch.optim import SGD, Adam
-from minitorch.MNISTIterator import load_mnist, MNISTIterator
+from minitorch.MNISTIterator import load_mnist, load_fashion_mnist, MNISTIterator
 from minitorch.tensor_ops import SimpleBackend
 from minitorch.tensor_functions import tensor_from_numpy
 from minitorch.autodiff import no_grad
@@ -52,10 +52,12 @@ def parse_args():
     parser.add_argument("--epochs", type=int, default=10, help="Number of training epochs")
     parser.add_argument("--batch_size", type=int, default=64, help="Batch size")
     parser.add_argument("--init_mode", type=str, default="he",
-                        choices=["he", "xavier"], help="Weight initialization mode")
+                        choices=["he", "xavier", "small"], help="Weight initialization mode")
     parser.add_argument("--activation", type=str, default="sigmoid",
-                        choices=["relu", "sigmoid", "tanh"], help="Activation function")
-    parser.add_argument("--data_dir", type=str, default="./data", help="MNIST data directory")
+                        choices=list(ACTIVATION_REGISTRY.keys()), help="Activation function")
+    parser.add_argument("--dataset", type=str, default="mnist",
+                        choices=["mnist", "fashion"], help="Dataset to use: mnist or fashion")
+    parser.add_argument("--data_dir", type=str, default="./data", help="Dataset download directory")
     parser.add_argument("--log_interval", type=int, default=10,
                         help="Log every N batches (0 = only epoch logs)")
     parser.add_argument("--save_plots", action="store_true", default=True,
@@ -68,22 +70,15 @@ def parse_args():
                         choices=["cpu", "cuda"], help="Device to run on (cpu or cuda)")
     parser.add_argument("--optimizer", type=str, default="sgd",
                         choices=["sgd", "adam"], help="Optimizer type")
+    parser.add_argument("--shuffle", type=int, default=1,
+                        help="Whether to shuffle training data (1=True, 0=False)")
     return parser.parse_args()
 
 
 # ============================================================================
 # 模型构建
 # ============================================================================
-
-def get_activation(name: str):
-    if name == "relu":
-        return ReLU()
-    elif name == "sigmoid":
-        return Sigmoid()
-    elif name == "tanh":
-        return Tanh()
-    else:
-        raise ValueError(f"Unknown activation: {name}")
+# get_activation 现在从 minitorch.nn 导入，统一维护注册表
 
 
 def build_model(input_dim: int, hidden_sizes, num_classes: int,
@@ -208,14 +203,19 @@ def train(args):
         print("[Device] Using CPU backend")
 
     # ---- 1. 数据加载 ----
-    print("Loading MNIST data...")
-    train_images, train_labels = load_mnist(args.data_dir, kind="train")
-    test_images, test_labels = load_mnist(args.data_dir, kind="test")
+    if args.dataset == "fashion":
+        print("Loading Fashion-MNIST data...")
+        train_images, train_labels = load_fashion_mnist(args.data_dir, kind="train")
+        test_images, test_labels = load_fashion_mnist(args.data_dir, kind="test")
+    else:
+        print("Loading MNIST data...")
+        train_images, train_labels = load_mnist(args.data_dir, kind="train")
+        test_images, test_labels = load_mnist(args.data_dir, kind="test")
     print(f"  Train: {train_images.shape[0]} samples")
     print(f"  Test:  {test_images.shape[0]} samples")
 
     train_iter = MNISTIterator(train_images, train_labels, args.batch_size,
-                                shuffle=True, backend=args.device)
+                                shuffle=bool(args.shuffle), backend=args.device)
     test_iter = MNISTIterator(test_images, test_labels, args.batch_size,
                                shuffle=False, backend=args.device)
 
@@ -259,6 +259,7 @@ def train(args):
         total_correct = 0
         total_samples = 0
         batch_count = 0
+        batch_gnorm = 0.0
 
         for images, labels in train_iter:
             batch_size = images.shape[0]
@@ -270,6 +271,10 @@ def train(args):
             # 反向传播
             optimizer.zero_grad()
             loss.backward()
+
+            # 记录梯度范数（必须在 step 之前，否则 param.update 后 grad 会丢失）
+            batch_gnorm = compute_grad_norm(model.parameters())
+
             optimizer.step()
 
             # 统计
@@ -294,9 +299,8 @@ def train(args):
         train_loss = total_loss / total_samples
         train_acc = total_correct / total_samples
 
-        # 梯度范数（取 epoch 结束时的参数梯度）
-        gnorm = compute_grad_norm(model.parameters())
-        grad_norms.append(gnorm)
+        # 梯度范数（取最后一个 batch 的梯度范数）
+        grad_norms.append(batch_gnorm)
 
         # 测试集评估（默认只测 10 个 batch 加速）
         test_loss, test_acc = evaluate(model, test_iter, loss_fn, 
@@ -312,7 +316,7 @@ def train(args):
         print(f"--- Epoch {epoch+1}/{args.epochs} ({epoch_time:.1f}s) ---")
         print(f"  Train Loss: {train_loss:.4f} | Train Acc: {train_acc:.4f}")
         print(f"  Test  Loss: {test_loss:.4f} | Test  Acc: {test_acc:.4f}")
-        print(f"  Grad Norm:  {gnorm:.4f}")
+        print(f"  Grad Norm:  {batch_gnorm:.4f}")
 
     # ---- 6. 最终结果 ----
     print(f"\n{'='*60}")
@@ -325,6 +329,7 @@ def train(args):
     log_data = {
         "config": {
             "device": args.device,
+            "dataset": args.dataset,
             "lr": args.lr,
             "weight_decay": args.weight_decay,
             "dropout_p": args.dropout_p,

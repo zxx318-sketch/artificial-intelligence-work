@@ -1,0 +1,7 @@
+EXPORTS
+    MatrixMultiply
+    tensorMap
+    tensorZip
+    tensorReduce
+    im2colLauncher
+    col2imLauncher

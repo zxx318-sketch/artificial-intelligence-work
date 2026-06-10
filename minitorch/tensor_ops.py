@@ -50,6 +50,8 @@ _NUMPY_UFUNC_MAP = {
     operators.eq:        lambda a, b: (a == b).astype(np.float32),
     operators.is_close:  lambda a, b: (np.abs(a - b) < 1e-2).astype(np.float32),
     operators.relu_back: lambda x, d: np.where(x > 0, d, 0.0),
+    operators.leaky_relu: lambda x: np.where(x > 0, x, 0.01 * x).astype(np.float32),
+    operators.leaky_relu_back: lambda x, d: np.where(x > 0, d, 0.01 * d).astype(np.float32),
     operators.log_back:  lambda x, d: d / (x + 1e-6),
     operators.inv_back:  lambda x, d: -(1.0 / (x * x)) * d,
     operators.pow:       np.power,
@@ -163,6 +165,7 @@ class TensorBackend:
         self.neg_map = ops.map(operators.neg)
         self.sigmoid_map = ops.map(operators.sigmoid)
         self.relu_map = ops.map(operators.relu)
+        self.leaky_relu_map = ops.map(operators.leaky_relu)
         self.log_map = ops.map(operators.log)
         self.exp_map = ops.map(operators.exp)
         self.id_map = ops.map(operators.id)
@@ -177,6 +180,7 @@ class TensorBackend:
         self.eq_zip = ops.zip(operators.eq)
         self.is_close_zip = ops.zip(operators.is_close)
         self.relu_back_zip = ops.zip(operators.relu_back)
+        self.leaky_relu_back_zip = ops.zip(operators.leaky_relu_back)
         self.log_back_zip = ops.zip(operators.log_back)
         self.inv_back_zip = ops.zip(operators.inv_back)
         self.pow_scalar_zip = ops.zip(operators.pow)

@@ -113,6 +113,48 @@ def download_mnist(data_dir: str = "./data"):
             print(f"{filepath} already exists, skipping.")
 
 
+def download_fashion_mnist(data_dir: str = "./data"):
+    """
+    Download the Fashion-MNIST dataset.
+    File format is identical to MNIST, only URLs differ.
+    """
+    fashion_dir = os.path.join(data_dir, "fashion")
+    os.makedirs(fashion_dir, exist_ok=True)
+    # 多个镜像源，优先国内/欧洲快速源
+    base_urls = [
+        "https://github.com/zalandoresearch/fashion-mnist/raw/master/data/fashion/",
+        "http://fashion-mnist.s3-website.eu-central-1.amazonaws.com/",
+    ]
+    files = {
+        "train_images": "train-images-idx3-ubyte.gz",
+        "train_labels": "train-labels-idx1-ubyte.gz",
+        "test_images": "t10k-images-idx3-ubyte.gz",
+        "test_labels": "t10k-labels-idx1-ubyte.gz"
+    }
+    for key, filename in files.items():
+        filepath = os.path.join(fashion_dir, filename)
+        if not os.path.exists(filepath):
+            downloaded = False
+            for base_url in base_urls:
+                url = base_url + filename
+                print(f"[Fashion-MNIST] Trying {url} ...")
+                try:
+                    urllib.request.urlretrieve(url, filepath)
+                    print(f"[Fashion-MNIST] Downloaded {filename} to {filepath}")
+                    downloaded = True
+                    break
+                except (urllib.error.HTTPError, OSError) as e:
+                    print(f"  Failed: {e}")
+                    continue
+            if not downloaded:
+                raise RuntimeError(
+                    f"Could not download Fashion-MNIST {filename} from any source. "
+                    f"Please download manually and place in {fashion_dir}/"
+                )
+        else:
+            print(f"[Fashion-MNIST] {filepath} already exists, skipping.")
+
+
 def load_mnist(data_dir: str = "./data", kind: str = "train") -> Tuple[np.ndarray, np.ndarray]:
     """
     Load the MNIST dataset from specified directory.
@@ -138,6 +180,34 @@ def load_mnist(data_dir: str = "./data", kind: str = "train") -> Tuple[np.ndarra
     # Read Images
     with gzip.open(images_path, 'rb') as imgpath:
         # Magic number, num_images, rows, cols are 4 integers (16 bytes)
+        magic, num, rows, cols = struct.unpack(">IIII", imgpath.read(16))
+        images = np.frombuffer(imgpath.read(), dtype=np.uint8).reshape(num, rows, cols)
+
+    return images, labels
+
+
+def load_fashion_mnist(data_dir: str = "./data", kind: str = "train") -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Load the Fashion-MNIST dataset from specified directory.
+    Returns:
+        images: np.ndarray of shape (N, 28, 28) with pixel values in [0, 255].
+        labels: np.ndarray of shape (N,) with integer labels in [0, 9].
+    """
+    download_fashion_mnist(data_dir)
+    fashion_dir = os.path.join(data_dir, "fashion")
+
+    if kind == "train":
+        labels_path = os.path.join(fashion_dir, "train-labels-idx1-ubyte.gz")
+        images_path = os.path.join(fashion_dir, "train-images-idx3-ubyte.gz")
+    else:
+        labels_path = os.path.join(fashion_dir, "t10k-labels-idx1-ubyte.gz")
+        images_path = os.path.join(fashion_dir, "t10k-images-idx3-ubyte.gz")
+
+    with gzip.open(labels_path, 'rb') as lbpath:
+        struct.unpack('>II', lbpath.read(8))
+        labels = np.frombuffer(lbpath.read(), dtype=np.uint8)
+
+    with gzip.open(images_path, 'rb') as imgpath:
         magic, num, rows, cols = struct.unpack(">IIII", imgpath.read(16))
         images = np.frombuffer(imgpath.read(), dtype=np.uint8).reshape(num, rows, cols)
 

@@ -114,6 +114,21 @@ def relu_back(x: float, d: float) -> float:
     return d if x > 0 else 0.0
 
 
+LEAKY_RELU_SLOPE = 0.01
+
+
+def leaky_relu(x: float, negative_slope: float = LEAKY_RELU_SLOPE) -> float:
+    """
+    $f(x) =$ x if x is greater than 0, else negative_slope * x
+    """
+    return x if x > 0 else negative_slope * x
+
+
+def leaky_relu_back(x: float, d: float, negative_slope: float = LEAKY_RELU_SLOPE) -> float:
+    r"If $f = leaky_relu$ compute $d \times f'(x)$"
+    return d if x > 0 else negative_slope * d
+
+
 # ## Task 0.3
 
 # Small practice library of elementary higher-order functions.

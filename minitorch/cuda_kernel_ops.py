@@ -24,11 +24,19 @@ from .tensor_ops import TensorBackend
 # Load the shared library
 lib = None
 try:
+    import sys
     current_dir = os.path.dirname(os.path.abspath(__file__))
-    lib_path = os.path.join(current_dir, "cuda_kernels", "combine.so")
+    if sys.platform == "win32":
+        lib_name = "combine.dll"
+    else:
+        lib_name = "combine.so"
+    lib_path = os.path.join(current_dir, "cuda_kernels", lib_name)
     lib = ctypes.CDLL(lib_path)
 except Exception as e:
-    print(f"cuda kernels not implemented: combine.so not found ({e})")
+    print(f"cuda kernels not implemented: {lib_name} not found ({e})")
+    if sys.platform == "win32":
+        print("  [HINT] If you have an NVIDIA GPU, run 'compile_cuda.bat' to build the CUDA kernels.")
+        print("  [HINT] Make sure CUDA Toolkit 'bin' folder is in your PATH.")
 
 datatype = np.float32
 
@@ -50,8 +58,10 @@ fn_map = {
   operators.inv_back: 14,
   operators.is_close: 15,
   operators.max: 16,
-  operators.pow: 17, 
-  operators.tanh: 18
+  operators.pow: 17,
+  operators.tanh: 18,
+  operators.leaky_relu: 19,
+  operators.leaky_relu_back: 20,
 }
 
 THREADS_PER_BLOCK = 32

@@ -23,3 +23,22 @@ env/
 # OS
 .DS_Store
 Thumbs.db
+
+# pytest
+.pytest_cache/
+.hypothesis/
+
+# 调试代码
+debug*.py
+test_speed*.py
+tensor_tests/
+
+# 实验输出（图片、日志、结果）
+experiments/figures/
+experiments/results/
+training_curves.png
+training_log.json
+
+# 中文文件名文档
+浙江大学*.docx
+report_extracted.txt

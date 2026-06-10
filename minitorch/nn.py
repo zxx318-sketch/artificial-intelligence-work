@@ -4,7 +4,10 @@ import math
 from . import operators
 from .autodiff import Context
 from .tensor import Tensor
-from .tensor_functions import Function, rand, tensor, tensor_from_numpy
+from .tensor_functions import (
+    Function, rand, tensor, tensor_from_numpy,
+    ReLU as ReLUFunc, Sigmoid as SigmoidFunc, Tanh as TanhFunc, LeakyReLU as LeakyReLUFunc,
+)
 from .module import Module, Parameter
 from .tensor_ops import SimpleBackend
 import numpy as np
@@ -84,6 +87,8 @@ class Linear(Module):
             std = math.sqrt(2.0 / in_size)
         elif init_mode == "xavier":
             std = math.sqrt(2.0 / (in_size + out_size))
+        elif init_mode == "small":
+            std = 0.01
         else:
             std = math.sqrt(2.0 / in_size)
 
@@ -300,17 +305,35 @@ class Sequential(Module):
 
 class ReLU(Module):
     def forward(self, x: Tensor) -> Tensor:
-        return x.relu()
-    
+        return ReLUFunc.apply(x)
+
 class Sigmoid(Module):
     def forward(self, x: Tensor) -> Tensor:
-        return x.sigmoid()
-
-    
+        return SigmoidFunc.apply(x)
 
 class Tanh(Module):
     def forward(self, x: Tensor) -> Tensor:
-        return x.tanh()
+        return TanhFunc.apply(x)
+
+class LeakyReLU(Module):
+    def forward(self, x: Tensor) -> Tensor:
+        return LeakyReLUFunc.apply(x)
+
+
+# Registry: name -> Module class
+# Usage: get_activation('relu') -> ReLU instance
+ACTIVATION_REGISTRY = {
+    "relu": ReLU,
+    "sigmoid": Sigmoid,
+    "tanh": Tanh,
+    "leaky_relu": LeakyReLU,
+}
+
+
+def get_activation(name: str) -> Module:
+    if name not in ACTIVATION_REGISTRY:
+        raise ValueError(f"Unknown activation: {name}. Available: {list(ACTIVATION_REGISTRY.keys())}")
+    return ACTIVATION_REGISTRY[name]()
 
 # ==============================================================================
 # Part 4: Loss Function

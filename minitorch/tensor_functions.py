@@ -231,6 +231,18 @@ class ReLU(Function):
         return grad_output.f.relu_back_zip(a, grad_output)
 
 
+class LeakyReLU(Function):
+    @staticmethod
+    def forward(ctx: Context, t1: Tensor) -> Tensor:
+        ctx.save_for_backward(t1)
+        return t1.f.leaky_relu_map(t1)
+
+    @staticmethod
+    def backward(ctx: Context, grad_output: Tensor) -> Tensor:
+        (a,) = ctx.saved_values
+        return grad_output.f.leaky_relu_back_zip(a, grad_output)
+
+
 class Log(Function):
     @staticmethod
     def forward(ctx: Context, t1: Tensor) -> Tensor:
